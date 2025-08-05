@@ -90,12 +90,16 @@ namespace ACT_Plugin
 
         private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
-            capture?.Dispose();
+            // 初始化期间不处理选择变更事件，避免重复启动抓包
+            if (isInitializing) return;
+            
             object selectedItem = comboBox1.SelectedItem;
-
-            capture = new NetworkCapture("Star");
-            capture.initDevices();
-            capture.StartCapture(selectedItem.ToString());
+            if (selectedItem != null && capture != null)
+            {
+                capture.ChangeCapture(selectedItem.ToString());
+                // 自动保存设置
+                SaveSettings();
+            }
         }
 
         #endregion
@@ -104,6 +108,7 @@ namespace ACT_Plugin
         private System.Windows.Forms.ComboBox comboBox1;
         internal Label label2;
         private NetworkCapture capture = null;
+        private bool isInitializing = false;
 
         #endregion
         public Plugin()
@@ -122,7 +127,6 @@ namespace ACT_Plugin
             pluginScreenSpace.Controls.Add(this);   // Add this UserControl to the tab ACT provides
             this.Dock = DockStyle.Fill; // Expand the UserControl to fill the tab's client space
             xmlSettings = new SettingsSerializer(this); // Create a new settings serializer and pass it this instance
-            LoadSettings();
 
 
             var pluginContainer = ActGlobals.oFormActMain.PluginGetSelfData(this);
@@ -142,14 +146,35 @@ namespace ACT_Plugin
 
             capture = new NetworkCapture("Star");
             capture.initDevices();
+            
+            // 设置初始化标志，防止LoadSettings时触发事件
+            isInitializing = true;
+            
             foreach (var item in capture.deviceDescs)
             {
                 comboBox1.Items.Add(item);
             }
-            capture.StartCapture(comboBox1.SelectedText);
+            
+            // 在加载设备列表后读取保存的设置
+            LoadSettings();
+            
+            // 如果没有选中任何项目，默认选中第一个
+            if (comboBox1.SelectedIndex == -1 && comboBox1.Items.Count > 0)
+            {
+                comboBox1.SelectedIndex = 0;
+            }
+            
+            // 初始化完成，允许事件处理
+            isInitializing = false;
+            
+            // 启动捕获（只启动一次）
+            if (comboBox1.SelectedItem != null)
+            {
+                capture.StartCapture(comboBox1.SelectedItem.ToString());
+            }
 
             // Create some sort of parsing event handler.  After the "+=" hit TAB twice and the code will be generated for you.
-            ActGlobals.oFormActMain.AfterCombatAction += new CombatActionDelegate(oFormActMain_AfterCombatAction);
+            // ActGlobals.oFormActMain.AfterCombatAction += new CombatActionDelegate(oFormActMain_AfterCombatAction);
 
             lblStatus.Text = "Plugin Started";
         }
@@ -160,21 +185,17 @@ namespace ACT_Plugin
             capture?.Dispose();
 
             // Unsubscribe from any events you listen to when exiting!
-            ActGlobals.oFormActMain.AfterCombatAction -= oFormActMain_AfterCombatAction;
+            // ActGlobals.oFormActMain.AfterCombatAction -= oFormActMain_AfterCombatAction;
 
             SaveSettings();
             lblStatus.Text = "Plugin Exited";
         }
         #endregion
 
-        void oFormActMain_AfterCombatAction(bool isImport, CombatActionEventArgs actionInfo)
-        {
-        }
-
         void LoadSettings()
         {
             // Add any controls you want to save the state of
-            // xmlSettings.AddControlSetting(textBox1.Name, textBox1);
+            xmlSettings.AddControlSetting(comboBox1.Name, comboBox1);
 
             if (File.Exists(settingsFile))
             {

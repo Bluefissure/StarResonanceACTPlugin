@@ -9,10 +9,23 @@ namespace StarResonanceACTPlugin
 {
     public class PbDecoder
     {
-        public Proto Decode(byte[] buf)
+        private StreamWriter logWriter;
+
+        public PbDecoder(StreamWriter logWriter)
+        {
+            this.logWriter = logWriter;
+        }
+        private void Log(string message)
+        {
+            string timestamp = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
+            logWriter.WriteLine(timestamp);
+            Console.WriteLine(timestamp);
+        }
+        public Proto Decode(byte[] buf, bool verbose=false, int layer=0)
         {
             var proto = new Proto(buf);
             var reader = new CodedInputStream(buf);
+            var layerSpace = new string('.', layer);
 
             while (!reader.IsAtEnd)
             {
@@ -26,15 +39,27 @@ namespace StarResonanceACTPlugin
                 {
                     case 0: // varint
                         value = reader.ReadInt64();
+                        if (verbose)
+                        {
+                            Log($"{layerSpace}{tag}->varint: {value}");
+                        }
                         break;
                     case 1: // fixed64
                         value = reader.ReadFixed64();
+                        if (verbose)
+                        {
+                            Log($"{layerSpace}{tag}->fixed64: {value}");
+                        }
                         break;
                     case 2: // length-delimited (可能是嵌套 message 或 bytes)
                         var bytes = reader.ReadBytes().ToByteArray();
                         try
                         {
-                            var decoded = Decode(bytes); // 递归解码嵌套
+                            if (verbose)
+                            {
+                                Log($"{layerSpace}{tag}->nested");
+                            }
+                            var decoded = Decode(bytes, verbose, layer + 1); // 递归解码嵌套
                             value = new Proto(bytes, decoded);
                         }
                         catch
@@ -44,9 +69,14 @@ namespace StarResonanceACTPlugin
                         break;
                     case 5: // fixed32
                         value = reader.ReadFixed32();
+                        if (verbose)
+                        {
+                            Log($"{layerSpace}{tag}->fixed32: {value}");
+                        }
                         break;
                     default:
-                        throw new Exception($"Unsupported wire type: {wireType}");
+                        var rawBytes = reader.ReadBytes().ToByteArray();
+                        throw new Exception($"Unsupported wire type: {wireType} -> {BitConverter.ToString(rawBytes)}");
                 }
 
                 // 支持 repeated

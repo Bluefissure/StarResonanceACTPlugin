@@ -30,7 +30,7 @@ namespace StarResonanceACTPlugin
             string logFile = Path.Combine(logDir, "Network.log");
             var fileStream = new FileStream(logFile, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
             logWriter = new StreamWriter(fileStream, Encoding.UTF8) { AutoFlush = true };
-            logWriter.WriteLine($"[{DateTime.Now}] 日志初始化");
+            Log("日志初始化");
         }
         private void Log(string message)
         {
@@ -62,6 +62,31 @@ namespace StarResonanceACTPlugin
             this.deviceDescs = devices.Select(device => device.Description);
         }
 
+        public void ChangeCapture(string newSelectedDevice)
+        {
+            var oldSelectedDevice = this.selectedDevice;
+            var devices = CaptureDeviceList.Instance;
+            if (devices.Count < 1)
+            {
+                Log("没有检测到可用网卡");
+                return;
+            }
+
+            var oldDevice = devices.Where(device => device.Description == oldSelectedDevice).FirstOrDefault();
+            oldDevice?.StopCapture();
+            oldDevice?.Dispose();
+
+            var newDevice = devices.Where(device => device.Description == newSelectedDevice).FirstOrDefault();
+            this.selectedDeviceName = newDevice.Description;
+            newDevice.OnPacketArrival += new PacketArrivalEventHandler(OnPacketArrival);
+            newDevice.Open(DeviceModes.Promiscuous, 1000);
+            newDevice.Filter = "tcp or udp";
+            Log($"重新开始抓包于 {newDevice.Description}");
+            this.analyzer?.Dispose();
+            this.analyzer = new NetworkAnalyzer(this.logWriter);
+            newDevice.StartCapture();
+        }
+
         public void StartCapture(string selectedDevice)
         {
             this.selectedDevice = selectedDevice;
@@ -87,17 +112,15 @@ namespace StarResonanceACTPlugin
             }
             this.selectedDeviceName = device.Description;
             device.OnPacketArrival += new PacketArrivalEventHandler(OnPacketArrival);
-
             device.Open(DeviceModes.Promiscuous, 1000);
-            device.Filter = "tcp or udp"; // 仅抓取TCP/UDP
+            device.Filter = "tcp or udp";
             Log($"开始抓包于 {device.Description}");
+            device.StartCapture();
 
             // 定时更新端口->PID映射（避免频繁查询）
             var portUpdateTimer = new System.Timers.Timer(2000);
             portUpdateTimer.Elapsed += (s, e) => { portToPidMap = TcpTable.GetTcpPortPidMap(); };
             portUpdateTimer.Start();
-
-            device.StartCapture();
             //device.StopCapture();
             //device.Close();
         }
@@ -147,6 +170,7 @@ namespace StarResonanceACTPlugin
                     device.Close();
                 }
             }
+            this.analyzer?.Dispose();
             logWriter?.Close();
             logWriter?.Dispose();
         }

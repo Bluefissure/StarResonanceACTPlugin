@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("Star Resonance ACT Plugin")]
-[assembly: AssemblyDescription("A sample of an ACT plugin that parses Star Resonance conbat network logs")]
+[assembly: AssemblyDescription("A sample of an ACT plugin that parses Star Resonance combat network logs")]
 [assembly: AssemblyCompany("Bluefissure")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyProduct("StarResonanceACTPlugin")]
@@ -29,5 +29,5 @@ using System.Runtime.InteropServices;
 //      Build Number
 //      Revision
 //
-[assembly: AssemblyVersion("0.0.0.1")]
-[assembly: AssemblyFileVersion("0.0.0.1")]
+[assembly: AssemblyVersion("0.0.0.2")]
+[assembly: AssemblyFileVersion("0.0.0.2")]

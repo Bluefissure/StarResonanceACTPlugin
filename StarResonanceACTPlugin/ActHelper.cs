@@ -39,6 +39,7 @@ namespace StarResonanceACTPlugin
                         attacker,
                         "Skill",
                         "Enemy");
+                    ms.Tags["Job"] = "Blm";
 
                     ActGlobals.oFormActMain.AddCombatAction(ms);
                 }
