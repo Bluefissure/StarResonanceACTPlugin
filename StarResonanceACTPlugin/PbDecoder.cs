@@ -75,12 +75,55 @@ namespace StarResonanceACTPlugin
                         }
                         break;
                     default:
-                        var rawBytes = reader.ReadBytes().ToByteArray();
-                        throw new Exception($"Unsupported wire type: {wireType} -> {BitConverter.ToString(rawBytes)}");
+                        // 对于未知的wire type，尝试跳过这个字段
+                        try
+                        {
+                            if (wireType == 3 || wireType == 4 || wireType == 6 || wireType == 7)
+                            {
+                                // 这些可能是自定义的wire type，尝试作为length-delimited处理
+                                var data = reader.ReadBytes().ToByteArray();
+                                value = data;
+                                if (verbose)
+                                {
+                                    Log($"{layerSpace}{tag}->unknown_type_{wireType}: data={BitConverter.ToString(data)}");
+                                }
+                            }
+                            else
+                            {
+                                // 其他未知类型，尝试读取一些字节然后跳过
+                                try
+                                {
+                                    var data = reader.ReadBytes().ToByteArray();
+                                    value = data;
+                                    if (verbose)
+                                    {
+                                        Log($"{layerSpace}{tag}->unknown_type_{wireType}: data={BitConverter.ToString(data)}");
+                                    }
+                                }
+                                catch
+                                {
+                                    value = null;
+                                    if (verbose)
+                                    {
+                                        Log($"{layerSpace}{tag}->unknown_type_{wireType}: completely skipped");
+                                    }
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            // 如果跳过失败，记录错误但继续处理
+                            if (verbose)
+                            {
+                                Log($"Failed to handle unknown wire type {wireType} for tag {tag}");
+                            }
+                            value = null;
+                        }
+                        break;
                 }
 
-                // 支持 repeated
-                if (proto.Data.ContainsKey(tag))
+                // 支持 repeated (只有当value不为null时才添加)
+                if (value != null && proto.Data.ContainsKey(tag))
                 {
                     if (proto.Data[tag] is List<object> list)
                     {
@@ -91,7 +134,7 @@ namespace StarResonanceACTPlugin
                         proto.Data[tag] = new List<object> { proto.Data[tag], value };
                     }
                 }
-                else
+                else if (value != null)
                 {
                     proto.Data[tag] = value;
                 }

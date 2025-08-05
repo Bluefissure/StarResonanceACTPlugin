@@ -22,14 +22,15 @@ namespace StarResonanceACTPlugin
             logWriter.WriteLine(timestamp);
             Console.WriteLine(timestamp);
         }
-        internal void AddDamageAttack(string attacker, string skillType, bool critical, bool lucky, int damage, DateTime time)
+
+        internal void AddDamageAttack(string attacker, string target, string skillType, bool critical, bool lucky, bool heal, int damage, DateTime time)
         {
             try
             {
-                if (ActGlobals.oFormActMain.SetEncounter(time, attacker, "Enemy"))
+                if (ActGlobals.oFormActMain.SetEncounter(time, attacker, target))
                 {
                     MasterSwing ms = new(
-                        (int)SwingTypeEnum.Melee,
+                        heal ? (int)SwingTypeEnum.Healing : (int)SwingTypeEnum.Melee,
                         critical,
                         lucky ? "Direct" : "",
                         new Dnum(damage),
@@ -38,14 +39,14 @@ namespace StarResonanceACTPlugin
                         skillType,
                         attacker,
                         "Skill",
-                        "Enemy");
-                    ms.Tags["Job"] = "Blm";
+                        target);
 
                     ActGlobals.oFormActMain.AddCombatAction(ms);
                 }
-            } catch
+            }
+            catch (Exception ex)
             {
-                Log("Error sending ACT Damage Attack.");
+                Log($"Error sending ACT Damage Attack: {ex.Message}");
             }
         }
     }

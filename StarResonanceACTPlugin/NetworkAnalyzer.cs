@@ -29,6 +29,7 @@ namespace StarResonanceACTPlugin
         private readonly Dictionary<uint, int> failCount = new();
         private readonly Dictionary<uint, DateTime> sequenceTimestamps = new();
         private readonly HashSet<uint> expectedSequences = new();
+        private readonly Dictionary<ulong, string> uidToNameMap = new();
         private readonly object tcpLock = new();
         private readonly Timer cleanupTimer;
         private uint maxObservedGap = 0;
@@ -97,6 +98,9 @@ namespace StarResonanceACTPlugin
                         Log($"Cleaned up {staleSequences.Count} stale sequences");
                     }
                 }
+                
+                // 检查战斗遭遇超时
+                // actHelper?.CheckEncounterTimeout();
             }
             catch (ObjectDisposedException)
             {
@@ -376,6 +380,7 @@ namespace StarResonanceACTPlugin
             sequenceTimestamps.Clear();
             failCount.Clear();
             expectedSequences.Clear();
+            uidToNameMap.Clear();
             maxObservedGap = 0;
             consecutivePackets = 0;
         }
@@ -444,28 +449,100 @@ namespace StarResonanceACTPlugin
                                 if (b7 is not Proto) continue;
                                 var b7Dict = ((Proto)b7).Data;
                                 if (!b7Dict.TryGetValue(2, out var hitsObj)) continue;
-                                foreach (var hitObj in NormalizeToList(hitsObj))
+                                var hitList = NormalizeToList(hitsObj);
+                                var hitListLen = hitList.Count;
+                                //foreach (var hitObj in hitList)
+                                for (int idx = 0; idx < hitListLen; idx ++)
                                 {
+                                    var hitObj = hitList[idx];
                                     if (hitObj is not Proto) continue;
                                     try
                                     {
                                         var hit = ((Proto)hitObj).Data;
+                                        
                                         int? skill = hit.TryGetValue(12, out var s) && !(s is Proto) ? Convert.ToInt32(s) : (int?)null;
-                                        if (skill == null) continue;
+                                        if (skill == null) {
+                                            continue;
+                                        }
+
+
+                                        //Log($"[DEBUG] Raw hit data:");
+                                        //foreach (var kvp in hit)
+                                        //{
+                                        //    string valueStr = "";
+                                        //    if (kvp.Value is Proto proto)
+                                        //    {
+                                        //        Log($"  [{kvp.Key}] = Proto (expanded):");
+                                        //        foreach (var subKvp in proto.Data)
+                                        //        {
+                                        //            string subValueStr = "";
+                                        //            if (subKvp.Value is Proto subProto)
+                                        //            {
+                                        //                subValueStr = $"Proto[{string.Join(",", subProto.Data.Keys)}]";
+                                        //            }
+                                        //            else
+                                        //            {
+                                        //                subValueStr = subKvp.Value?.ToString() ?? "null";
+                                        //            }
+                                        //            Log($"    [{subKvp.Key}] = {subValueStr} ({subKvp.Value?.GetType().Name})");
+                                        //        }
+                                        //    }
+                                        //    else
+                                        //    {
+                                        //        valueStr = kvp.Value?.ToString() ?? "null";
+                                        //        Log($"  [{kvp.Key}] = {valueStr} ({kvp.Value?.GetType().Name})");
+                                        //    }
+                                        //}
 
                                         long damage = hit.TryGetValue(6, out var v) ? Convert.ToInt64(v) :
                                                       hit.TryGetValue(8, out var luckyVal) ? Convert.ToInt64(luckyVal) : 0;
+                                        bool isHeal = hit.TryGetValue(4, out var healType) && Convert.ToInt64(healType) != 0;
                                         bool isLuck = hit.TryGetValue(8, out luckyVal) && Convert.ToInt64(luckyVal) != 0;
                                         bool isCrit = hit.TryGetValue(5, out var critVal) && Convert.ToInt32(critVal) != 0;
+                                        bool isKill = hit.TryGetValue(17, out var killVal) && Convert.ToInt32(killVal) != 0;
                                         long hpLessen = hit.TryGetValue(9, out var hp) ? Convert.ToInt64(hp) : 0;
+                                        
+                                        // 解析坐标信息 (字段19)
+                                        string coordinates = "Unknown";
+                                        if (hit.TryGetValue(19, out var coordObj) && coordObj is Proto coordProto)
+                                        {
+                                            var coordData = coordProto.Data;
+                                            if (coordData.TryGetValue(1, out var x) && 
+                                                coordData.TryGetValue(2, out var y) && 
+                                                coordData.TryGetValue(3, out var z))
+                                            {
+                                                // 将UInt32解释为float坐标
+                                                float xCoord = BitConverter.ToSingle(BitConverter.GetBytes(Convert.ToUInt32(x)), 0);
+                                                float yCoord = BitConverter.ToSingle(BitConverter.GetBytes(Convert.ToUInt32(y)), 0);
+                                                float zCoord = BitConverter.ToSingle(BitConverter.GetBytes(Convert.ToUInt32(z)), 0);
+                                                coordinates = $"({xCoord:F2}, {yCoord:F2}, {zCoord:F2})";
+                                            }
+                                        }
+
                                         ulong operatorUid = hit.TryGetValue(21, out var op) ? ((ulong)(long)op >> 16) :
                                                             hit.TryGetValue(11, out var op2) ? ((ulong)(long)op2 >> 16) : 0;
+                                        ulong targetUid = bDict.TryGetValue(1, out var targetIdObj) ? ((ulong)(long)targetIdObj) : 0;
                                         bool isPlayer = ((ulong)(hit.TryGetValue(21, out var p) ? (long)p :
                                                                   hit.TryGetValue(11, out var p2) ? (long)p2 : 0) & 0xFFFF) == 640;
 
                                         if (!isPlayer || operatorUid == 0) continue;
-                                        Log($"[HIT] UID={operatorUid} Skill={skill} Damage={damage} HpLessen={hpLessen} Crit={isCrit} Luck={isLuck} isZstd={isZstd}");
-                                        actHelper.AddDamageAttack(operatorUid.ToString(), skill.ToString(), isCrit, isLuck, (int)damage, DateTime.Now);
+
+                                        // 检查是否有已知的角色名
+                                        // string playerName = uidToNameMap.TryGetValue(operatorUid, out string name) ? name : operatorUid.ToString();
+                                        string opType = "HIT";
+                                        if (isKill)
+                                        {
+                                            opType = "KILL";
+                                        }
+                                        if (isHeal)
+                                        {
+                                            opType = "HEAL";
+                                        }
+
+                                        Log($"[{opType}] UID={operatorUid} Target={targetUid} Skill={skill} Damage={damage} Coords={coordinates} Crit={isCrit} Luck={isLuck}");
+
+
+                                        actHelper.AddDamageAttack($"Player#{operatorUid}", $"Enemy#{targetUid}", skill.ToString(), isCrit, isLuck, isHeal, (int)damage, DateTime.Now);
                                     }
                                     catch
                                     {
